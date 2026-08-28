@@ -1,8 +1,12 @@
 """Client test cho versioned_server.py — gọi cả tool v1, v2 và đọc server metadata."""
-
 import asyncio
 import json
 import sys
+
+if sys.stdout:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if sys.stderr:
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -15,7 +19,7 @@ async def main() -> None:
         async with ClientSession(read, write) as session:
             await session.initialize()
 
-            # 1. Đọc server metadata
+            # 1. Đọc server metadata qua Resource server://info
             info = await session.read_resource("server://info")
             meta = json.loads(info.contents[0].text)
             print(f"Server: {meta['name']} v{meta['version']}")
@@ -29,7 +33,7 @@ async def main() -> None:
                 print(f"  - {t.name}: {t.description}")
             print()
 
-            # 3. Gọi tool v1 (deprecated nhưng vẫn hoạt động)
+            # 3. Gọi tool v1 (deprecated nhưng vẫn hoạt động cho client cũ)
             r1 = await session.call_tool("get_weather", {"city": "Hanoi"})
             print(f"[v1] get_weather('Hanoi'):\n  {r1.content[0].text}\n")
 

@@ -1,27 +1,32 @@
-"""MCP Server có Versioning — minh hoạ backward compatibility.
+"""MCP Server có Versioning — minh họa backward compatibility.
 
 Khi tool thay đổi schema (thêm/bớt tham số, đổi kiểu trả về), client cũ
-sẽ bị break nếu không có chiến lược versioning. Ví dụ này minh hoạ 3 kỹ thuật:
+sẽ bị break nếu không có chiến lược versioning. Ví dụ này minh họa 3 kỹ thuật:
 
   1. Tool mới song song (get_weather_v2) — giữ tool cũ cho client legacy
   2. Tham số optional với default — thêm tính năng mà không break client cũ
-  3. Server version trong metadata — client kiểm tra version trước khi gọi
+  3. Server version trong metadata (server://info) — client kiểm tra version trước khi gọi
 
 Cách chạy:
-    pip install -r ../requirements.txt
     python versioned_server.py
 """
 
 from __future__ import annotations
 
 import json
+import sys
 from datetime import datetime, timezone
 
-from mcp.server.mcpserver import MCPServer
+if sys.stdout:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if sys.stderr:
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+from mcp.server.fastmcp import FastMCP
 
 SERVER_VERSION = "2.0.0"
 
-mcp = MCPServer(
+mcp = FastMCP(
     "weather-v2",
     instructions=f"Weather MCP Server v{SERVER_VERSION}. "
     "Hỗ trợ get_weather (v1, backward compat) và get_weather_v2 (chi tiết hơn).",
@@ -34,7 +39,7 @@ _MOCK_DB = {
         "humidity": 82,
         "wind_speed": 12,
         "forecast": [
-            {"day": "tomorrow", "temp": 27, "condition": "mưa nhẹ"},
+            {"day": "tomorrow", "temp": 27, "condition": "mưa nhỏ"},
             {"day": "day_after", "temp": 31, "condition": "nắng"},
         ],
     },
@@ -71,7 +76,7 @@ def get_weather_v2(
     """[v2] Lấy thời tiết chi tiết — JSON, hỗ trợ forecast và đơn vị đo.
 
     Args:
-        city: Tên thành phố (ví dụ: Hanoi, Danang)
+        city: Tên thành phố (Ví dụ: Hanoi, Danang)
         include_forecast: Có trả thêm dự báo 2 ngày tới không (mặc định: False)
         units: Đơn vị nhiệt độ — "celsius" hoặc "fahrenheit" (mặc định: celsius)
     """

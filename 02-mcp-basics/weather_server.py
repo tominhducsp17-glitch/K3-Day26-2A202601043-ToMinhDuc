@@ -1,4 +1,4 @@
-"""MCP SERVER minh hoạ — công bố tool `get_weather` qua giao thức MCP.
+"""MCP SERVER minh họa — công bố tool `get_weather` qua giao thức MCP.
 
 Khác với function calling: tool nằm ở một server ĐỘC LẬP. Server tự "khai
 báo" tool của mình; bất kỳ MCP client nào (Claude Code, Claude Desktop,
@@ -7,17 +7,22 @@ code bên trong.
 
 Schema của tool được TỰ ĐỘNG sinh ra từ type hints + docstring.
 
-Chạy trực tiếp:
-    pip install -r ../requirements.txt
+Cách chạy:
     python weather_server.py
 
-Đăng ký với Claude Code (làm 1 lần, dùng mãi):
+Đăng ký với Claude Code:
     claude mcp add weather -- python /đường/dẫn/tới/weather_server.py
 """
+import sys
 
-from mcp.server.mcpserver import MCPServer
+if sys.stdout:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if sys.stderr:
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-mcp = MCPServer("weather")
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("weather")
 
 _MOCK_DB = {
     "Hanoi": "29°C, trời mưa",
@@ -33,4 +38,4 @@ def get_weather(city: str) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run()  # mặc định chạy qua stdio
+    mcp.run()

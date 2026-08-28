@@ -1,232 +1,299 @@
-# Phân biệt MCP và Function Calling
+# K3 Day 26 — Model Context Protocol (MCP) Server & Agent Integration
 
-Đây là hai khái niệm hay bị nhầm lẫn nhưng thực ra ở **hai tầng khác nhau**, và **bổ sung cho nhau** chứ không thay thế.
+Báo cáo nghiệm thu & hướng dẫn chạy bài Lab Day 26 cho cả 3 cấp độ: **Cơ bản**, **Trung bình** và **Khó**.
 
-## Cấu trúc repo
+---
 
+## 1. Mô tả công việc thực tế mà MCP Server giải quyết
+
+Trong thực tế, các Large Language Model (LLM) như Claude, Gemini hay GPT bị giới hạn bởi:
+1. **Dữ liệu tĩnh (cutoff date):** Không thể biết thời tiết, nhiệt độ hay thiên tai đang diễn ra thời gian thực.
+2. **Nguy cơ Hallucination (bịa đặt):** Khi người dùng hỏi thời tiết, LLM dễ tự suy diễn thông tin sai lệch gây nguy hiểm cho kế hoạch di chuyển, du lịch, logistics hoặc nông nghiệp.
+
+**Giải pháp:**  
+Hệ thống **Weather MCP Server** được xây dựng nhằm cung cấp chuẩn kết nối mở **Model Context Protocol (MCP)** giữa AI Agent và các trạm khí tượng thủy văn thời gian thực:
+- Cho phép AI Agent tự động khám phá năng lực (Tool Discovery) mà không cần hard-code logic vào ứng dụng.
+- Cung cấp dữ liệu nhiệt độ, độ ẩm, sức gió, chỉ số UV, tầm nhìn và dự báo thời tiết nhiều ngày theo thời gian thực tế.
+- Hỗ trợ triển khai linh hoạt qua cả **Stdio** (local) lẫn **Streamable HTTP** (mạng phân tán, cloud deployment).
+
+---
+
+## 2. Mô tả Input / Output chi tiết của từng Tool
+
+### A. Hệ thống Weather Agent chính (`04-lab/mcp-server/weather.py`)
+
+| Tên Tool | Tham số đầu vào (Input) | Kiểu dữ liệu | Bắt buộc | Mô tả & Ví dụ đầu ra (Output) |
+|---|---|---|:---:|---|
+| `get_current_weather` | `city` | `str` | Có | **Input:** Tên thành phố bất kỳ trên thế giới (ví dụ: `"Hanoi"`, `"Danang"`, `"Tokyo"`).<br>**Output:** Chuỗi báo cáo chi tiết gồm: Nhiệt độ (°C/°F), Nhiệt độ cảm nhận, Tình trạng mây, Độ ẩm %, Tốc độ gió, Hướng gió, Áp suất khí quyển (mb), Chỉ số UV, Tầm nhìn (km), Thời gian cập nhật. |
+| `get_forecast` | `city`<br>`days` | `str`<br>`int` | Có<br>Không (mặc định = 3) | **Input:** Tên thành phố và số ngày dự báo (tối đa 3 ngày).<br>**Output:** Báo cáo dự báo từng ngày gồm: Nhiệt độ cao nhất/thấp nhất, Tình trạng thời tiết, Xác suất có mưa (%), Tốc độ gió tối đa, Chỉ số UV. |
+| `health_check` | Không có | — | — | **Output:** Chuỗi xác nhận server MCP đang hoạt động ổn định và sẵn sàng phục vụ. |
+
+### B. Hệ thống Versioned MCP Server (`03-production/versioned_server.py`)
+
+| Tên Tool | Phiên bản | Tham số đầu vào (Input) | Mô tả đầu ra (Output) |
+|---|:---:|---|---|
+| `get_weather` | **v1** (Legacy) | `city: str` | Trả về chuỗi rút gọn cho client cũ: `Hanoi: 29°C, trời mưa` |
+| `get_weather_v2` | **v2** (Modern) | `city: str`<br>`include_forecast: bool = False`<br>`units: str = "celsius"` | Trả về JSON chuẩn hóa v2.0 có timestamp UTC, kèm mảng dự báo nếu bật `include_forecast=True` và chuyển đổi đơn vị (`celsius`/`fahrenheit`). |
+
+---
+
+## 3. Cấu trúc thư mục Repository
+
+```text
+├── 01-function-calling/          # So sánh Function Calling thuần với Gemini SDK
+├── 02-mcp-basics/               # MCP Server cơ bản chạy qua Stdio Transport
+│   ├── weather_server.py        # FastMCP Server stdio
+│   └── weather_client.py        # Client tự khám phá và gọi tool qua stdio
+├── 03-production/               # Kỹ thuật Production: Auth, Versioning, Registry
+│   ├── auth_server.py           # [Bài Trung bình] Streamable HTTP + Bearer Token Auth
+│   ├── auth_client.py           # [Bài Trung bình] Client xác thực token hợp lệ/không hợp lệ
+│   ├── versioned_server.py      # [Bài Khó] Versioning v1/v2 + Resource server://info
+│   └── versioned_client.py      # [Bài Khó] Client đọc metadata trước khi gọi tool v1 & v2
+├── 04-lab/                      # [Bài Lab hoàn chỉnh] Weather Agent với Google ADK
+│   ├── mcp-server/weather.py    # FastMCP Server chạy Streamable HTTP (Port 8085)
+│   ├── mcp-client/
+│   │   ├── weather_agent/agent.py # Agent kết nối qua StreamableHTTPConnectionParams
+│   │   └── verify_setup.py      # Kịch bản kiểm thử tự động toàn bộ môi trường
+│   └── VERIFICATION.md          # Bằng chứng nghiệm thu kết quả kiểm thử
+└── README.md                    # Tài liệu hướng dẫn nộp bài tổng hợp
 ```
-day26-mcp/
-├── README.md                ← Bạn đang đọc file này
-├── requirements.txt         ← pip install -r requirements.txt
-│
-├── 01-function-calling/     ← Bước 1: Function Calling thuần (Gemini SDK)
-│   ├── README.md
-│   └── weather_function_calling.py
-│
-├── 02-mcp-basics/           ← Bước 2: MCP server + client (không cần API key)
-│   ├── README.md
-│   ├── weather_server.py
-│   └── weather_client.py
-│
-└── 03-production/           ← Bước 3: Auth, Tool Registry, Versioning
-    ├── README.md
-    ├── auth_server.py
-    ├── auth_client.py
-    ├── registry.json
-    ├── registry_client.py
-    └── versioned_server.py
-```
 
-## Quick start
+---
+
+## 4. Hướng dẫn cài đặt và chạy (Quickstart)
+
+### Bước 1: Chuẩn bị môi trường & Cài đặt thư viện
+Yêu cầu Python >= 3.10. Bạn có thể sử dụng `uv` hoặc `pip`:
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
+# Cài đặt thư viện cho bài lab
+cd 04-lab/mcp-client
+uv sync
+# Hoặc cài đặt tổng quát:
 pip install -r requirements.txt
+```
 
-# MCP demo (không cần API key)
-cd 02-mcp-basics && python weather_client.py
+### Bước 2: Cấu hình biến môi trường
+Tạo file `.env` tại thư mục `04-lab/mcp-client/.env` và `04-lab/mcp-server/.env`:
+```bash
+GOOGLE_API_KEY=your_gemini_api_key_here
+WEATHERAPI_KEY=your_weatherapi_key_here
+```
+*(Lưu ý: Nếu không có key WeatherAPI, server tích hợp sẵn cơ chế Live Meteorology Fallback tự động lấy dữ liệu thời tiết thực tế từ Open-Meteo).*
 
-# Function Calling (cần Gemini API key)
-export GEMINI_API_KEY=...
-cd 01-function-calling && python weather_function_calling.py
+### Bước 3: Khởi động MCP Server và ADK Agent
+Mở 2 cửa sổ terminal:
 
-# Production — Auth (2 terminal)
+- **Terminal 1 (Chạy MCP Server Streamable HTTP):**
+  ```bash
+  cd 04-lab/mcp-server
+  uv run python weather.py
+  # Server lắng nghe tại: http://0.0.0.0:8085/mcp
+  ```
+
+- **Terminal 2 (Chạy ADK Agent Web UI hoặc CLI):**
+  ```bash
+  cd 04-lab/mcp-client
+  # Khởi động giao diện Web trực quan:
+  uv run adk web --port 8000
+  # Mở trình duyệt: http://localhost:8000 và chọn "weather_agent"
+  ```
+
+---
+
+## 5. Hướng dẫn đăng ký MCP Server với Claude Code
+
+Bạn có thể đăng ký Weather MCP Server vào **Claude Code** theo 2 cách:
+
+### Cách 1: Đăng ký qua Stdio Transport (Khuyên dùng khi chạy local)
+```bash
+claude mcp add weather -- python "02-mcp-basics/weather_server.py"
+```
+
+### Cách 2: Đăng ký qua Streamable HTTP Transport (Khi server đang chạy ở port 8085)
+```bash
+claude mcp add weather-http --url http://localhost:8085/mcp
+```
+
+### Kiểm tra đăng ký thành công trong Claude Code:
+```bash
+claude mcp list
+```
+Claude Code sẽ liệt kê `weather` với các tools: `get_current_weather`, `get_forecast`, `health_check`. Bạn có thể trực tiếp gõ vào Claude Code: *"Thời tiết ở Hà Nội hôm nay thế nào?"* và Claude Code sẽ tự động gọi MCP server để trả lời.
+
+---
+
+## 6. Bằng chứng & Kiểm tra Tool chạy được (BÀI CƠ BẢN)
+
+### Kịch bản 1: Kiểm thử tự động với `verify_setup.py`
+Chạy lệnh:
+```bash
+cd 04-lab/mcp-client
+uv run python verify_setup.py
+```
+**Kết quả thực tế:**
+```text
+============================================================
+Weather Agent Setup Verification
+============================================================
+
+[*] Checking environment configuration...
+[PASS] GOOGLE_API_KEY configured (AQ.Ab8RN6L...)
+
+[*] Checking dependencies...
+[PASS] Google ADK
+[PASS] Google Generative AI
+[PASS] MCP
+[PASS] FastMCP
+[PASS] python-dotenv
+[PASS] httpx
+
+[*] Checking agent structure...
+[PASS] weather_agent/agent.py
+[PASS] weather_agent/__init__.py
+
+[*] Checking MCP server connectivity...
+[PASS] MCP server reachable at http://localhost:8085/mcp
+
+[*] Checking agent import...
+[PASS] Agent imported successfully: weather_agent
+       Model: gemini-2.5-flash
+
+============================================================
+[SUCCESS] All checks passed!
+```
+
+### Kịch bản 2: Chạy trực tiếp qua CLI với câu hỏi tiếng Việt
+```bash
+uv run adk run weather_agent "Thời tiết hiện tại ở Đà Nẵng thế nào?"
+```
+**Phản hồi thực tế từ Agent:**
+> `[weather_agent]: Thời tiết hiện tại ở Đà Nẵng, Việt Nam là 37.4°C (99.3°F), cảm giác như 41.2°C (106.2°F). Tình trạng nhiều mây, độ ẩm 38%, gió 9.9 km/h.`
+
+---
+
+## 7. Phần nâng cao: BÀI TRUNG BÌNH (Streamable HTTP + Token Authentication)
+
+Mã nguồn tại thư mục: `03-production/auth_server.py` và `03-production/auth_client.py`.
+
+### A. Cơ chế bảo mật
+Server chạy giao thức **Streamable HTTP** kèm middleware `TokenVerifier`. Mọi request phải mang theo header:
+```text
+Authorization: Bearer dev-token-abc123
+```
+Nếu token sai hoặc thiếu, server trả về mã lỗi chuẩn `401 Unauthorized` kèm header `WWW-Authenticate: Bearer error="invalid_token"`.
+
+### B. Hướng dẫn Test Token ĐÚNG
+1. Khởi động server xác thực tại Terminal 1:
+   ```bash
+   cd 03-production
+   python auth_server.py
+   # Lắng nghe tại: http://localhost:8001/mcp
+   ```
+2. Chạy client với token hợp lệ tại Terminal 2:
+   ```bash
+   python auth_client.py dev-token-abc123
+   ```
+   **Kết quả:**
+   ```text
+   [AUTH SUCCESS] Connected with token: 'dev-token-abc123'
+   Available tools:
+     - get_weather: Lấy thời tiết hiện tại của một thành phố.
+   Result: Hanoi: 29°C, trời mưa
+   ```
+
+### C. Hướng dẫn Test Token SAI / THIẾU TOKEN
+
+- **Test Token SAI bằng client:**
+  ```bash
+  python auth_client.py wrong-token-xyz
+  # Kết quả: [AUTH REJECTED] Connection rejected (401 Unauthorized)
+  ```
+- **Test Token SAI bằng curl:**
+  ```bash
+  curl -i -X POST http://localhost:8001/mcp \
+    -H "Authorization: Bearer wrong-token" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
+    -d "{}"
+  ```
+  **Kết quả server trả về:**
+  ```http
+  HTTP/1.1 401 Unauthorized
+  www-authenticate: Bearer error="invalid_token", error_description="Authentication required"
+
+  {"error": "invalid_token", "error_description": "Authentication required"}
+  ```
+
+- **Test THIẾU TOKEN bằng client:**
+  ```bash
+  python auth_client.py NONE
+  # Kết quả: [AUTH REJECTED] Connection rejected
+  ```
+- **Test THIẾU TOKEN bằng curl:**
+  ```bash
+  curl -i -X POST http://localhost:8001/mcp -d "{}"
+  # Kết quả: HTTP/1.1 401 Unauthorized
+  ```
+
+---
+
+## 8. Phần nâng cao: BÀI KHÓ (Versioning, Backward Compatibility & Resource `server://info`)
+
+Mã nguồn tại thư mục: `03-production/versioned_server.py` và `03-production/versioned_client.py`.
+
+### A. Các kỹ thuật triển khai
+1. **Tool mới song song:** Giữ nguyên tool v1 (`get_weather`) cho client cũ, đồng thời phát triển tool v2 (`get_weather_v2`) trả về cấu trúc JSON giàu dữ liệu hơn.
+2. **Tham số optional với giá trị default:** `include_forecast: bool = False`, `units: str = "celsius"` để tránh làm gãy schema của client.
+3. **Resource `server://info`:** Công bố phiên bản server `2.0.0`, danh sách tool đã bị deprecated (`['get_weather']`) và cẩm nang di chuyển `migration_guide`.
+4. **Client đọc metadata trước khi gọi tool:** Client chủ động truy vấn `session.read_resource("server://info")` để kiểm tra trạng thái trước khi tương tác.
+
+### B. Hướng dẫn chạy và nghiệm thu
+Chạy client nghiệm thu phiên bản:
+```bash
 cd 03-production
-python auth_server.py              # terminal 1
-python auth_client.py              # terminal 2
+python versioned_client.py
+```
+**Kết quả thực tế hiển thị đầy đủ:**
+```text
+Server: weather-v2 v2.0.0
+Deprecated tools: ['get_weather']
+Migration: Chuyển từ get_weather sang get_weather_v2. Tham số 'city' giữ nguyên, thêm include_forecast và units.
 
-# Production — Tool Registry
-cd 03-production && python registry_client.py
+Tools:
+  - get_weather: [v1] Lấy thời tiết hiện tại — trả chuỗi đơn giản. Deprecated, dùng get_weather_v2.
+  - get_weather_v2: [v2] Lấy thời tiết chi tiết — JSON, hỗ trợ forecast và đơn vị đo.
+
+[v1] get_weather('Hanoi'):
+  Hanoi: 29°C, trời mưa
+
+[v2] get_weather_v2('Hanoi', forecast=True):
+{
+  "api_version": "2.0",
+  "city": "Hanoi",
+  "temp": 29,
+  "units": "celsius",
+  "condition": "trời mưa",
+  "humidity": 82,
+  "wind_speed_kmh": 12,
+  "timestamp": "2026-08-28T07:01:34+00:00",
+  "forecast": [
+    {
+      "day": "tomorrow",
+      "temp": 27,
+      "condition": "mưa nhỏ"
+    },
+    {
+      "day": "day_after",
+      "temp": 31,
+      "condition": "nắng"
+    }
+  ]
+}
 ```
 
 ---
 
-## Định nghĩa ngắn gọn
-
-**Function Calling** là một *khả năng của model* (capability). Model được huấn luyện để khi bạn đưa cho nó danh sách các "công cụ" (kèm schema mô tả tham số), nó có thể tự quyết định gọi công cụ nào và sinh ra JSON tham số phù hợp. Bản thân model **không chạy** function — nó chỉ nói "hãy gọi `get_weather(city='Hanoi')`". App mới là nơi chạy tool.
-
-**MCP (Model Context Protocol)** là một *giao thức chuẩn* (protocol) — giống như USB-C hay HTTP cho thế giới AI. Nó định nghĩa cách một **MCP Client** (như Claude Code, Claude Desktop) kết nối tới các **MCP Server** để khám phá và sử dụng tools, resources, prompts một cách thống nhất.
-
----
-
-## So sánh trực tiếp
-
-| Tiêu chí | Function Calling | Model Context Protocol (MCP) |
-|---|---|---|
-| **Bản chất** | Tính năng của mô hình (Model capability) | Giao thức giao tiếp client–server |
-| **Ai định nghĩa tool?** | Bạn hard-code trong từng app | Server tự công bố (self-describe) tool |
-| **Tái sử dụng** | Phải viết lại cho mỗi app/model | Viết 1 lần, mọi MCP client dùng được |
-| **Thực thi** | App của bạn tự chạy | MCP Server chạy, client điều phối |
-| **Tính chuẩn hóa** | Mỗi nhà cung cấp 1 kiểu (OpenAI, Anthropic khác nhau) | Một chuẩn chung do Anthropic đề xuất |
-| **Hệ sinh thái** | Khó chia sẻ dạng module đóng gói sẵn | Dễ dàng chia sẻ và tải về các "MCP Servers" mã nguồn mở |
-
-## Quan hệ giữa chúng
-
-Điểm quan trọng nhất: **MCP dùng Function Calling bên dưới**. Chúng không loại trừ nhau.
-
-```
-User hỏi
-   │
-   ▼
-LLM (dùng Function Calling để quyết định gọi tool nào)
-   │
-   ▼
-MCP Client  ──[giao thức MCP]──►  MCP Server (thực thi tool thật)
-   │                                   │
-   ◄───────────── kết quả ─────────────┘
-   ▼
-LLM tổng hợp câu trả lời
-```
-
-## Khi nào dùng cái nào?
-
-- **Function Calling thuần**: app đơn giản, tool gắn chặt với 1 ứng dụng, không cần chia sẻ.
-- **MCP**: muốn tool/tích hợp dùng lại được trên nhiều AI client, muốn tách biệt logic tool khỏi app, hoặc xây hệ sinh thái tích hợp (DB, file, API nội bộ...).
-
----
-
-## Minh hoạ bằng mã nguồn
-
-Cùng một tool `get_weather`, dưới đây là hai cách triển khai để thấy rõ sự khác biệt.
-
-### [Cách 1 — Function Calling thuần (Google Gemini SDK)](01-function-calling/)
-
-Tool được **định nghĩa và thực thi ngay trong app**. Model chỉ quyết định gọi tool nào, app tự chạy và đưa kết quả trở lại.
-
-```
-User hỏi → Model quyết định gọi get_weather("Hà Nội")
-                    │
-                    ▼
-             App TỰ THỰC THI hàm get_weather
-                    │
-                    ▼
-             Model tổng hợp câu trả lời
-```
-
-> Nhược điểm: schema viết tay, tool gắn chặt trong app — muốn dùng lại ở app khác phải copy cả schema lẫn hàm.
-
-Chi tiết + code: xem [`01-function-calling/README.md`](01-function-calling/README.md)
-
-### [Cách 2 — MCP (server tự công bố tool, mọi client dùng chung)](02-mcp-basics/)
-
-Tool được tách ra **một MCP server độc lập**. Server tự "khai báo" nó có tool gì; bất kỳ MCP client nào (Claude Code, Claude Desktop, Cursor...) cũng cắm vào dùng được mà không cần biết code bên trong.
-
-```
-weather_client.py                       weather_server.py
-┌─────────────┐    giao thức MCP    ┌─────────────────┐
-│  list_tools │ ──────────────────▶ │ @mcp.tool()     │
-│  call_tool  │ ◀────────────────── │ get_weather()   │
-└─────────────┘     stdio           └─────────────────┘
-```
-
-Chi tiết + code: xem [`02-mcp-basics/README.md`](02-mcp-basics/README.md)
-
-### Điểm khác biệt rút ra từ code
-
-| | Function Calling thuần | MCP |
-|---|---|---|
-| Khai báo schema | Tự viết tay trong app | `@mcp.tool()` tự sinh từ type hints |
-| Nơi thực thi tool | Trong app gọi model | Trong MCP server riêng |
-| Khám phá tool | Hard-code danh sách `tools` | `session.list_tools()` tại runtime |
-| Dùng lại ở app khác | Copy code | Cắm thêm client, không sửa server |
-| Vai trò Function Calling | Là toàn bộ cơ chế | Là lớp model bên trong MCP |
-
----
-
-## [MCP trong Production](03-production/)
-
-Các ví dụ trên chạy tốt trên máy cá nhân, nhưng đưa vào **hệ thống production** cần giải quyết thêm ba vấn đề:
-
-```
-┌─────────────────────────────────────────────────────┐
-│                  Production MCP                     │
-│                                                     │
-│  ┌──────────┐   ┌───────────┐   ┌───────────────┐   │
-│  │ Security │   │ Registry  │   │  Versioning   │   │
-│  │          │   │           │   │               │   │
-│  │ • Auth   │   │ • Discover│   │ • v1 compat   │   │
-│  │ • Token  │   │ • Connect │   │ • v2 features │   │
-│  │ • Scopes │   │ • Health  │   │ • Deprecation │   │
-│  └──────────┘   └───────────┘   └───────────────┘   │
-└─────────────────────────────────────────────────────┘
-```
-
-### 1. Security — Authentication & Authorization
-
-MCP server phục vụ qua **HTTP** cho nhiều client → cần xác thực. MCP SDK hỗ trợ sẵn **Bearer Token** verification:
-
-- Server: cấu hình `AuthSettings` + implement `TokenVerifier` protocol
-- Client: gửi header `Authorization: Bearer <token>` qua `httpx.AsyncClient`
-- Không có token → 401, token sai → 403, logic tool không biết gì về auth
-
-| Tầng | Demo (stdio) | Production (HTTP) |
-|---|---|---|
-| Transport | stdio (cùng máy) | Streamable HTTP (qua mạng) |
-| Auth | Không cần | Bearer token / OAuth / mTLS |
-| Phạm vi truy cập | Toàn bộ | Scopes giới hạn từng client |
-
-### 2. Tool Registry & Discovery
-
-Agent **không hard-code** tool nào. Nó hỏi **Tool Registry** — danh mục trung tâm liệt kê tất cả tool từ mọi server — theo yêu cầu task:
-
-```
-Agent nhận task "lấy thời tiết Hà Nội"
-   │
-   ▼
-Tool Registry: "tool nào có tag 'weather'?"
-   │
-   ├── get_weather v1.0 → server: weather (stdio)
-   └── get_weather_v2 v2.0 → server: weather-v2 (stdio)
-   │
-   ▼
-Agent chọn best match (v2.0, không deprecated)
-   │
-   ▼
-Kết nối tới server weather-v2, gọi get_weather_v2(city="Hanoi")
-```
-
-Registry là **tool-centric** — đơn vị khám phá là **tool** (tag, description, parameters), không phải server.
-
-| | Hard-code (demo) | Tool Registry (production) |
-|---|---|---|
-| Agent biết tool nào? | Chỉ tool được code sẵn | Tất cả tool trong registry |
-| Tìm tool | Theo tên cố định | Theo tag, keyword, capability |
-| Thêm tool mới | Sửa code agent | Thêm entry vào registry |
-| Chọn tool | Developer quyết định | Agent tự chọn best match |
-
-### 3. Versioning & Backward Compatibility
-
-Server v1 có `get_weather(city)` trả chuỗi đơn giản. V2 muốn trả JSON chi tiết, thêm `include_forecast`. Nếu đổi trực tiếp → mọi client cũ break. Giải pháp — 3 kỹ thuật kết hợp:
-
-| Kỹ thuật | Mô tả |
-|---|---|
-| **Tool mới song song** | `get_weather_v2` tồn tại bên cạnh `get_weather` — không xoá tool cũ |
-| **Tham số optional** | `include_forecast`, `units` có default → client cũ gọi vẫn đúng |
-| **Server metadata** | Resource `server://info` công bố version + deprecation notice |
-
-Chi tiết + code cho cả 3 phần: xem [`03-production/README.md`](03-production/README.md)
-
-### Tổng kết Production Checklist
-
-| Khía cạnh | Dev/Demo | Production |
-|---|---|---|
-| **Transport** | stdio (cùng máy) | HTTP/SSE (qua mạng) |
-| **Auth** | Không | Bearer token, OAuth, mTLS |
-| **Discovery** | Hard-code tool/server | Tool Registry — agent tìm tool theo task |
-| **Versioning** | 1 tool duy nhất | Tool v1 + v2 song song, deprecation notice |
-| **Health** | Không | Health check, retry, circuit breaker |
-| **Logging** | `print()` | Structured logging, tracing (OpenTelemetry) |
-
----
-
-**Tóm lại:** Function Calling là *cơ chế model gọi công cụ*; MCP là *chuẩn để kết nối model với các công cụ đó* — và MCP thực chất dùng Function Calling làm nền tảng để hoạt động.
+## 9. Cam kết bảo mật thông tin
+- File cấu hình môi trường `.env` chứa các API Key và credentials cá nhân đã được liệt kê trong `.gitignore` và **tuyệt đối không được commit hay push lên GitHub repository**.
+- Mọi ví dụ trong tài liệu chỉ sử dụng mock data hoặc token mẫu phục vụ kiểm thử an toàn (`dev-token-abc123`).
